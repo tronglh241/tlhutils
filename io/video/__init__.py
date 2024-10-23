@@ -1,3 +1,2 @@
-from .video_display import VideoDisplay
-from .video_reader import VideoReader
-from .video_writer import VideoWriter
+from .video_input import VideoReader
+from .video_output import VideoDisplay, VideoWriter
