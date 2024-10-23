@@ -1,0 +1,25 @@
+[flake8]
+# Define the maximum line length
+max-line-length = 120
+
+# Exclude specific directories or files from linting
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist,
+    .venv,
+    env,
+    *.egg-info
+    __init__.py
+
+# Specify the error codes to ignore
+ignore =
+    E501,
+    W503
+
+# Specify the list of plugins to enable
+enable-extensions = G
+
+# Configure the complexity checker
+max-complexity = 10
