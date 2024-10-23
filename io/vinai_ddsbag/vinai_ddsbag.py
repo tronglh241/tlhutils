@@ -1,4 +1,5 @@
 import bisect
+import json
 import sqlite3
 from collections import defaultdict
 from enum import Enum
@@ -6,6 +7,8 @@ from typing import Any, Dict, List, Optional
 
 import cv2
 import numpy as np
+
+from .wheel_odom_estimator import WheelOdomEstimator
 
 
 class SQLiteCursor:
@@ -105,25 +108,50 @@ class Gear(Enum):
 class FrameItem:
     def __init__(
         self,
-        front,
-        left,
-        rear,
-        right,
+        front: np.ndarray[Any, Any],
+        left: np.ndarray[Any, Any],
+        rear: np.ndarray[Any, Any],
+        right: np.ndarray[Any, Any],
+        x: Optional[float] = None,
+        y: Optional[float] = None,
+        theta: Optional[float] = None,
     ):
         self.front = front
         self.left = left
         self.rear = rear
         self.right = right
+        self.x = x
+        self.y = y
+        self.theta = theta
+
+    @property
+    def cams(self):
+        return {
+            'front': self.front,
+            'left': self.left,
+            'rear': self.rear,
+            'right': self.right,
+        }
 
 
 class VinAIDDSBag:
-    def __init__(self, db_path: str, compressed: bool = False, buffer_size: int = 20):
+    def __init__(
+        self,
+        db_path: str,
+        db_json_path: Optional[str] = None,
+        compressed: bool = False,
+        buffer_size: int = 20,
+        wheel_odom_estimator_config: Optional[Dict[str, Any]] = None,
+    ):
         self.db_path = db_path
+        self.db_json_path = db_json_path
         self.compressed = compressed
         self.ref_cam = [cam_name for cam_name in self.cam_topics][0]
         self.db: Optional[SQLiteDatabase] = None
+        self.db_json: Optional[SQLiteDatabase] = None
         self.buffer_size = buffer_size
         self.frame_buffers: Dict[str, List[Any]] = defaultdict(list)
+        self.wheel_odom_estimator = WheelOdomEstimator(wheel_odom_estimator_config)
 
     def __iter__(self):
         self.reset()
@@ -133,6 +161,12 @@ class VinAIDDSBag:
         next_item = self.next()
 
         if next_item is None:
+            if self.db is not None:
+                self.db.close()
+
+            if self.db_json is not None:
+                self.db_json.close()
+
             raise StopIteration
 
         return next_item
@@ -154,21 +188,49 @@ class VinAIDDSBag:
                 'right': '/adas/sensors/camera/rgb_fisheye_right@0',
             }
 
+    @property
+    def dbw_topics(self):
+        return {
+            'eps': '/adas/dbw/vf_eps_info@0',
+            'idb': '/adas/dbw/vf_idb_info@0',
+            'vcu': '/adas/dbw/vf_vcu_info@0',
+            'yss': '/adas/dbw/vf_yss_info@0',
+        }
+
     def reset(self):
         if self.db is not None:
             self.db.close()
 
         self.db = SQLiteDatabase(self.db_path)
+        self.cursors = {}
 
         # Check if all tables exist
         for table_name in self.cam_topics.values():
             if not self.db.table_exists(table_name):
                 raise ValueError(f'Table {table_name} does not exist in database {self.db_path}.')
 
-        self.cursors = {
-            cam_name: self.db.query(f'SELECT rti_cdr_sample, SampleInfo_reception_timestamp FROM "{topic}"')
-            for cam_name, topic in self.cam_topics.items()
+        cam_cursors = {
+            name: self.db.query(f'SELECT rti_cdr_sample, SampleInfo_reception_timestamp FROM "{topic}"')
+            for name, topic in self.cam_topics.items()
         }
+        self.cursors.update(cam_cursors)
+
+        if self.db_json_path is not None:
+            if self.db_json is not None:
+                self.db_json.close()
+
+            self.db_json = SQLiteDatabase(self.db_json_path)
+
+            # Check if all tables exist
+            for table_name in self.dbw_topics.values():
+                if not self.db_json.table_exists(table_name):
+                    raise ValueError(f'Table {table_name} does not exist in database {self.db_path}.')
+
+            dbw_cursors = {
+                name: self.db_json.query(f'SELECT rti_json_sample, SampleInfo_reception_timestamp FROM "{topic}"')
+                for name, topic in self.dbw_topics.items()
+            }
+            self.cursors.update(dbw_cursors)
 
     def next(self) -> Optional[FrameItem]:
         for name, cursor in self.cursors.items():
@@ -177,6 +239,9 @@ class VinAIDDSBag:
 
                 if row is None:
                     break
+
+                if name in self.dbw_topics:
+                    row = (json.loads(row[0]), row[1])
 
                 self.frame_buffers[name].append(row)
 
@@ -197,6 +262,25 @@ class VinAIDDSBag:
             rear=self.decode(frames['rear'][0]),
             right=self.decode(frames['right'][0]),
         )
+
+        if self.db_json_path is not None:
+            self.wheel_odom_estimator.update_info_and_estimate(
+                speed_timestamp=frames['idb'][0]['timestamp'],
+                gear=2 if Gear(frames['vcu'][0]['actual_gear']) == Gear.VF_GEAR_REVERSE else 0,
+                wheel_speed=[
+                    frames['idb'][0]['wheel_speed_fl'],
+                    frames['idb'][0]['wheel_speed_fr'],
+                    frames['idb'][0]['wheel_speed_rl'],
+                    frames['idb'][0]['wheel_speed_rr'],
+                ],
+                yaw_rate=frames['yss'][0]['yaw_rate'],
+                steering_angle=frames['eps'][0]['steering_angle'],
+            )
+            x, y, theta = self.wheel_odom_estimator.get_current_pose()
+
+            frame_item.x = x
+            frame_item.y = y
+            frame_item.theta = theta
 
         return frame_item
 
