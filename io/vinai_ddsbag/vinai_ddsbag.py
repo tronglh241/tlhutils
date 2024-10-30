@@ -1,101 +1,13 @@
-import bisect
 import json
-import sqlite3
-from collections import defaultdict
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import cv2
 import numpy as np
 
+from .sqlite3_utils import SQLiteCursor, SQLiteDatabase
+from .synchronizer import Item, Source, Synchronizer
 from .wheel_odom_estimator import WheelOdomEstimator
-
-
-class SQLiteCursor:
-    def __init__(self, connection):
-        '''
-        Initializes the SQLiteCursor class.
-
-        Args:
-            connection (sqlite3.Connection): SQLite connection object.
-        '''
-        self.connection = connection
-        self.cursor = self.connection.cursor()
-
-    def execute(self, query, parameters=None):
-        '''
-        Executes a given SQL query.
-
-        Args:
-            query (str): The SQL query to execute.
-            parameters (tuple or dict, optional): Parameters for the query.
-        '''
-        if parameters:
-            self.cursor.execute(query, parameters)
-        else:
-            self.cursor.execute(query)
-
-    def fetchall(self):
-        '''Fetches all rows of the query result.'''
-        return self.cursor.fetchall()
-
-    def fetchone(self):
-        '''Fetches the next row of a query result.'''
-        return self.cursor.fetchone()
-
-    def commit(self):
-        '''Commits the current transaction.'''
-        self.connection.commit()
-
-    def close(self):
-        '''Closes the cursor.'''
-        self.cursor.close()
-
-
-class SQLiteDatabase:
-    def __init__(self, db_path):
-        '''
-        Initializes the SQLiteDatabase class.
-
-        Args:
-            db_path (str): Path to the SQLite database file.
-        '''
-        self.connection = sqlite3.connect(db_path)
-
-    def table_exists(self, table_name):
-        '''
-        Checks if a table exists in the database.
-
-        Args:
-            table_name (str): Name of the table to check.
-
-        Returns:
-            bool: True if the table exists, False otherwise.
-        '''
-        query = 'SELECT name FROM sqlite_master WHERE type="table" AND name=?;'
-        cursor = self.query(query, (table_name,))
-        result = cursor.fetchone() is not None
-        cursor.close()
-        return result
-
-    def query(self, query, parameters=None):
-        '''
-        Executes a given SQL query and returns the results.
-
-        Args:
-            query (str): The SQL query to execute.
-            parameters (tuple or dict, optional): Parameters for the query.
-
-        Returns:
-            list: A list of rows returned by the query.
-        '''
-        cursor = SQLiteCursor(self.connection)
-        cursor.execute(query, parameters)
-        return cursor
-
-    def close(self):
-        '''Closes the database connection.'''
-        self.connection.close()
 
 
 class Gear(Enum):
@@ -134,24 +46,47 @@ class FrameItem:
         }
 
 
+class SQLiteSource(Source):
+    def __init__(self, cursor: SQLiteCursor):
+        self.cursor = cursor
+        super(SQLiteSource, self).__init__()
+
+    def reset(self):
+        pass
+
+    def next(self) -> Optional[Item]:
+        value = self.cursor.fetchone()
+
+        if value is None:
+            item = None
+        else:
+            item = Item(value[1], value[0])
+
+        return item
+
+
 class VinAIDDSBag:
     def __init__(
         self,
         db_path: str,
         db_json_path: Optional[str] = None,
         compressed: bool = False,
-        buffer_size: int = 20,
         wheel_odom_estimator_config: Optional[Dict[str, Any]] = None,
     ):
         self.db_path = db_path
         self.db_json_path = db_json_path
         self.compressed = compressed
-        self.ref_cam = [cam_name for cam_name in self.cam_topics][0]
+        self.ref_cam = [name for name in self.cam_topics][0]
+
         self.db: Optional[SQLiteDatabase] = None
-        self.db_json: Optional[SQLiteDatabase] = None
-        self.buffer_size = buffer_size
-        self.frame_buffers: Dict[str, List[Any]] = defaultdict(list)
-        self.wheel_odom_estimator = WheelOdomEstimator(wheel_odom_estimator_config)
+        self.synchronizer: Optional[Synchronizer] = None
+
+        self.pose_included = self.db_json_path is not None
+
+        if self.pose_included:
+            self.db_json: Optional[SQLiteDatabase] = None
+            self.ref_sensor = [name for name in self.dbw_topics][0]
+            self.wheel_odom_estimator = WheelOdomEstimator(wheel_odom_estimator_config)
 
     def __iter__(self):
         self.reset()
@@ -164,8 +99,9 @@ class VinAIDDSBag:
             if self.db is not None:
                 self.db.close()
 
-            if self.db_json is not None:
-                self.db_json.close()
+            if self.pose_included:
+                if self.db_json is not None:
+                    self.db_json.close()
 
             raise StopIteration
 
@@ -191,8 +127,8 @@ class VinAIDDSBag:
     @property
     def dbw_topics(self):
         return {
-            'eps': '/adas/dbw/vf_eps_info@0',
             'idb': '/adas/dbw/vf_idb_info@0',
+            'eps': '/adas/dbw/vf_eps_info@0',
             'vcu': '/adas/dbw/vf_vcu_info@0',
             'yss': '/adas/dbw/vf_yss_info@0',
         }
@@ -202,7 +138,7 @@ class VinAIDDSBag:
             self.db.close()
 
         self.db = SQLiteDatabase(self.db_path)
-        self.cursors = {}
+        cursors = {}
 
         # Check if all tables exist
         for table_name in self.cam_topics.values():
@@ -213,9 +149,9 @@ class VinAIDDSBag:
             name: self.db.query(f'SELECT rti_cdr_sample, SampleInfo_reception_timestamp FROM "{topic}"')
             for name, topic in self.cam_topics.items()
         }
-        self.cursors.update(cam_cursors)
+        cursors.update(cam_cursors)
 
-        if self.db_json_path is not None:
+        if self.pose_included:
             if self.db_json is not None:
                 self.db_json.close()
 
@@ -230,81 +166,51 @@ class VinAIDDSBag:
                 name: self.db_json.query(f'SELECT rti_json_sample, SampleInfo_reception_timestamp FROM "{topic}"')
                 for name, topic in self.dbw_topics.items()
             }
-            self.cursors.update(dbw_cursors)
+            cursors.update(dbw_cursors)
+
+        self.synchronizer = Synchronizer({name: SQLiteSource(cursor) for name, cursor in cursors.items()})
+        self.synchronizer_it = iter(self.synchronizer)
 
     def next(self) -> Optional[FrameItem]:
-        for name, cursor in self.cursors.items():
-            while len(self.frame_buffers[name]) < self.buffer_size:
-                row = self.cursors[name].fetchone()
+        while True:
+            try:
+                sync_items = next(self.synchronizer_it)
+            except StopIteration:
+                return None
 
-                if row is None:
-                    break
+            if self.pose_included:
+                if sync_items[self.ref_sensor].new:
+                    dbw_values = {name: json.loads(sync_items[name].value) for name in self.dbw_topics}
+                    self.wheel_odom_estimator.update_info_and_estimate(
+                        speed_timestamp=dbw_values['idb']['timestamp'],
+                        gear=2 if Gear(dbw_values['vcu']['actual_gear']) == Gear.VF_GEAR_REVERSE else 0,
+                        wheel_speed=[
+                            dbw_values['idb']['wheel_speed_fl'],
+                            dbw_values['idb']['wheel_speed_fr'],
+                            dbw_values['idb']['wheel_speed_rl'],
+                            dbw_values['idb']['wheel_speed_rr'],
+                        ],
+                        yaw_rate=dbw_values['yss']['yaw_rate'],
+                        steering_angle=dbw_values['eps']['steering_angle'],
+                    )
 
-                if name in self.dbw_topics:
-                    row = (json.loads(row[0]), row[1])
+            if sync_items[self.ref_cam].new:
+                frame_item = FrameItem(
+                    front=self.decode(sync_items['front'].value),
+                    left=self.decode(sync_items['left'].value),
+                    rear=self.decode(sync_items['rear'].value),
+                    right=self.decode(sync_items['right'].value),
+                )
 
-                self.frame_buffers[name].append(row)
+                if self.pose_included:
+                    x, y, theta = self.wheel_odom_estimator.get_pose_at_time(sync_items['front'].timestamp)
+                    frame_item.x = x
+                    frame_item.y = y
+                    frame_item.theta = theta
 
-        if any(not buffer for buffer in self.frame_buffers.values()):
-            return None
-
-        frames = {self.ref_cam: self.frame_buffers[self.ref_cam].pop(0)}
-
-        for name, frame_buffer in self.frame_buffers.items():
-            if name == self.ref_cam:
-                continue
-
-            frames[name] = self.find_closest(frames[self.ref_cam], frame_buffer)
-
-        frame_item = FrameItem(
-            front=self.decode(frames['front'][0]),
-            left=self.decode(frames['left'][0]),
-            rear=self.decode(frames['rear'][0]),
-            right=self.decode(frames['right'][0]),
-        )
-
-        if self.db_json_path is not None:
-            self.wheel_odom_estimator.update_info_and_estimate(
-                speed_timestamp=frames['idb'][0]['timestamp'],
-                gear=2 if Gear(frames['vcu'][0]['actual_gear']) == Gear.VF_GEAR_REVERSE else 0,
-                wheel_speed=[
-                    frames['idb'][0]['wheel_speed_fl'],
-                    frames['idb'][0]['wheel_speed_fr'],
-                    frames['idb'][0]['wheel_speed_rl'],
-                    frames['idb'][0]['wheel_speed_rr'],
-                ],
-                yaw_rate=frames['yss'][0]['yaw_rate'],
-                steering_angle=frames['eps'][0]['steering_angle'],
-            )
-            x, y, theta = self.wheel_odom_estimator.get_current_pose()
-
-            frame_item.x = x
-            frame_item.y = y
-            frame_item.theta = theta
+                break
 
         return frame_item
-
-    def find_closest(self, target, sorted_list):
-        pos = bisect.bisect_left(sorted_list, target[1], key=lambda x: x[1])
-
-        if pos == 0:
-            result = sorted_list[0]
-        elif pos == len(sorted_list):
-            result = sorted_list[-1]
-        else:
-            before = sorted_list[pos - 1]
-            after = sorted_list[pos]
-
-            if after[1] - target[1] < target[1] - before[1]:
-                result = after
-                pos = pos - 1
-            else:
-                result = before
-
-            for _ in range(pos):
-                del sorted_list[0]
-
-        return result
 
     def decode(self, buf):
         buf = bytearray(buf)

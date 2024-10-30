@@ -125,6 +125,18 @@ class WheelOdomEstimator:
         theta = self.mu[2]
         return x, y, theta
 
+    def get_pose_at_time(self, timestamp):
+        dt = timestamp / 1e9 - self.time_now
+        u = self.mu[3]
+        v = self.mu[4]
+        w = self.mu[5]
+        theta_now = self.mu[2]
+        x = self.mu[0] + u * np.cos(theta_now) * dt - v * np.sin(theta_now) * dt
+        y = self.mu[1] + u * np.sin(theta_now) * dt + v * np.cos(theta_now) * dt
+        theta = theta_now + w * dt
+
+        return x, y, theta
+
     def init(self):
         self.H[0, 3] = 1.0
         self.H[1, 4] = 1.0
