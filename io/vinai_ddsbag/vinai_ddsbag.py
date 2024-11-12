@@ -1,9 +1,10 @@
 import json
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 
 from .sqlite3_utils import SQLiteCursor, SQLiteDatabase
 from .synchronizer import Item, Source, Synchronizer
@@ -20,24 +21,24 @@ class Gear(Enum):
 class FrameItem:
     def __init__(
         self,
-        front: np.ndarray[Any, Any],
-        left: np.ndarray[Any, Any],
-        rear: np.ndarray[Any, Any],
-        right: np.ndarray[Any, Any],
+        front: npt.NDArray[Any],
+        left: npt.NDArray[Any],
+        rear: npt.NDArray[Any],
+        right: npt.NDArray[Any],
         x: Optional[float] = None,
         y: Optional[float] = None,
         theta: Optional[float] = None,
-    ):
-        self.front = front
-        self.left = left
-        self.rear = rear
-        self.right = right
-        self.x = x
-        self.y = y
-        self.theta = theta
+    ) -> None:
+        self.front: npt.NDArray[Any] = front
+        self.left: npt.NDArray[Any] = left
+        self.rear: npt.NDArray[Any] = rear
+        self.right: npt.NDArray[Any] = right
+        self.x: Optional[float] = x
+        self.y: Optional[float] = y
+        self.theta: Optional[float] = theta
 
     @property
-    def cams(self):
+    def cams(self) -> Dict[str, npt.NDArray[Any]]:
         return {
             'front': self.front,
             'left': self.left,
@@ -47,11 +48,11 @@ class FrameItem:
 
 
 class SQLiteSource(Source):
-    def __init__(self, cursor: SQLiteCursor):
-        self.cursor = cursor
+    def __init__(self, cursor: SQLiteCursor) -> None:
+        self.cursor: SQLiteCursor = cursor
         super(SQLiteSource, self).__init__()
 
-    def reset(self):
+    def reset(self) -> None:
         pass
 
     def next(self) -> Optional[Item]:
@@ -72,36 +73,35 @@ class VinAIDDSBag:
         db_json_path: Optional[str] = None,
         compressed: bool = False,
         wheel_odom_estimator_config: Optional[Dict[str, Any]] = None,
-    ):
-        self.db_path = db_path
-        self.db_json_path = db_json_path
-        self.compressed = compressed
-        self.ref_cam = [name for name in self.cam_topics][0]
+    ) -> None:
+        self.db_path: str = db_path
+        self.db_json_path: Optional[str] = db_json_path
+        self.compressed: bool = compressed
+        self.ref_cam: str = [name for name in self.cam_topics][0]
 
         self.db: Optional[SQLiteDatabase] = None
         self.synchronizer: Optional[Synchronizer] = None
 
-        self.pose_included = self.db_json_path is not None
+        self.pose_included: bool = self.db_json_path is not None
 
         if self.pose_included:
             self.db_json: Optional[SQLiteDatabase] = None
-            self.ref_sensor = [name for name in self.dbw_topics][0]
-            self.wheel_odom_estimator = WheelOdomEstimator(wheel_odom_estimator_config)
+            self.ref_sensor: str = [name for name in self.dbw_topics][0]
+            self.wheel_odom_estimator: WheelOdomEstimator = WheelOdomEstimator(wheel_odom_estimator_config)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[FrameItem]:
         self.reset()
         return self
 
-    def __next__(self):
+    def __next__(self) -> FrameItem:
         next_item = self.next()
 
         if next_item is None:
             if self.db is not None:
                 self.db.close()
 
-            if self.pose_included:
-                if self.db_json is not None:
-                    self.db_json.close()
+            if self.pose_included and self.db_json is not None:
+                self.db_json.close()
 
             raise StopIteration
 
@@ -125,7 +125,7 @@ class VinAIDDSBag:
             }
 
     @property
-    def dbw_topics(self):
+    def dbw_topics(self) -> Dict[str, str]:
         return {
             'idb': '/adas/dbw/vf_idb_info@0',
             'eps': '/adas/dbw/vf_eps_info@0',
@@ -133,12 +133,12 @@ class VinAIDDSBag:
             'yss': '/adas/dbw/vf_yss_info@0',
         }
 
-    def reset(self):
+    def reset(self) -> None:
         if self.db is not None:
             self.db.close()
 
         self.db = SQLiteDatabase(self.db_path)
-        cursors = {}
+        cursors: Dict[str, SQLiteCursor] = {}
 
         # Check if all tables exist
         for table_name in self.cam_topics.values():
@@ -155,6 +155,7 @@ class VinAIDDSBag:
             if self.db_json is not None:
                 self.db_json.close()
 
+            assert self.db_json_path is not None
             self.db_json = SQLiteDatabase(self.db_json_path)
 
             # Check if all tables exist
@@ -212,7 +213,7 @@ class VinAIDDSBag:
 
         return frame_item
 
-    def decode(self, buf):
+    def decode(self, buf: bytes) -> npt.NDArray[Any]:
         buf = bytearray(buf)
         if self.compressed:
             arr = np.asarray(buf[60:], dtype=np.uint8)

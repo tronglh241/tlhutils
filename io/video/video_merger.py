@@ -36,7 +36,7 @@ class VideoMerger:
         self.frame_size = frame_size
         self.codec = codec
 
-    def merge_videos(self):  # noqa: C901
+    def merge_videos(self) -> None:  # noqa: C901
         # Initialize VideoReader for each video path
         readers = [VideoReader(path) for path in self.video_paths]
 
@@ -71,6 +71,7 @@ class VideoMerger:
                     ret_all = False
                     break
 
+                assert frame is not None
                 frames.append(frame)
 
             if not ret_all:

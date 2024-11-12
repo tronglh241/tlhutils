@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
@@ -15,11 +17,11 @@ class Item:
 
 
 class Source(ABC):
-    def __init__(self):
+    def __init__(self) -> None:
         self.reset()
 
     @abstractmethod
-    def reset(self):
+    def reset(self) -> None:
         pass
 
     @abstractmethod
@@ -34,7 +36,7 @@ class Synchronizer:
     ):
         self.sources = sources
 
-    def __iter__(self):
+    def __iter__(self) -> Synchronizer:
         for source in self.sources.values():
             source.reset()
 

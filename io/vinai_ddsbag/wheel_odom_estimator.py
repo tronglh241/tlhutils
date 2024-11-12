@@ -1,30 +1,33 @@
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
+import numpy.typing as npt
 
 
 class WheelOdomEstimator:
-    def __init__(self, config=None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
         # Initialize state and matrices
-        self.mu = np.zeros(6)
-        self.zt = np.zeros(4)
-        self.I_mat = np.eye(6)
-        self.Sigma_sq = np.zeros((6, 6))
-        self.Relative_Sigma_sq = np.zeros((6, 6))
-        self.Init_relative_sigma_sq = np.zeros((6, 6))
-        self.Sigma_msq = np.zeros((6, 6))
-        self.Sigma_z = np.zeros((4, 4))
-        self.H = np.zeros((4, 6))
-        self.Fk = np.eye(6)
+        self.mu: npt.NDArray[Any] = np.zeros(6)
+        self.zt: npt.NDArray[Any] = np.zeros(4)
+        self.I_mat: npt.NDArray[Any] = np.eye(6)
+        self.Sigma_sq: npt.NDArray[Any] = np.zeros((6, 6))
+        self.Relative_Sigma_sq: npt.NDArray[Any] = np.zeros((6, 6))
+        self.Init_relative_sigma_sq: npt.NDArray[Any] = np.zeros((6, 6))
+        self.Sigma_msq: npt.NDArray[Any] = np.zeros((6, 6))
+        self.Sigma_z: npt.NDArray[Any] = np.zeros((4, 4))
+        self.H: npt.NDArray[Any] = np.zeros((4, 6))
+        self.Fk: npt.NDArray[Any] = np.eye(6)
 
         # Parameters
-        self.wheel_base = 0.0
-        self.steering_angle_factor = 0.0
-        self.wheel_radius = 0.0
-        self.traj_logged = False
+        self.wheel_base: float = 0.0
+        self.steering_angle_factor: float = 0.0
+        self.wheel_radius: float = 0.0
+        self.traj_logged: bool = False
 
         # Timing and state variables
-        self.time_now = 0.0
-        self.time_last = 0.0
-        self.dt = 0.0
+        self.time_now: float = 0.0
+        self.time_last: float = 0.0
+        self.dt: float = 0.0
 
         if config is not None:
             assert len(config['sigma_sq']) == 6
@@ -43,26 +46,28 @@ class WheelOdomEstimator:
 
         self.init()
 
-    def update_info_and_estimate(self, speed_timestamp, gear, wheel_speed, yaw_rate, steering_angle):
+    def update_info_and_estimate(
+        self, speed_timestamp: float, gear: int, wheel_speed: List[float], yaw_rate: float, steering_angle: float
+    ) -> None:
         self.predict(speed_timestamp, gear, wheel_speed, yaw_rate, steering_angle)
         self.update()
 
-    def predict(self, speed_timestamp, gear, wheel_speed, yaw_rate, steering_angle):
-        yaw_rate = 0 if abs(yaw_rate < 0.01) else yaw_rate
-
+    def predict(
+        self, speed_timestamp: float, gear: int, wheel_speed: List[float], yaw_rate: float, steering_angle: float
+    ) -> None:
+        yaw_rate = 0 if abs(yaw_rate) < 0.01 else yaw_rate
         self.time_now = speed_timestamp / 1e9
 
         if self.time_last > 0:
-            self.dt = (self.time_now - self.time_last)
+            self.dt = self.time_now - self.time_last
 
         self.time_last = self.time_now
 
         # Update odometry state with sensor data
         u_odom = (wheel_speed[2] + wheel_speed[3]) * self.wheel_radius / 2.0
-        u_odom = - u_odom if gear == 2 else u_odom
+        u_odom = -u_odom if gear == 2 else u_odom
 
         v_imu = 0.0
-
         omega_steering = u_odom * np.tan(steering_angle / self.steering_angle_factor * np.pi / 180.0) / self.wheel_base
         omega_imu = yaw_rate * np.pi / 180.0
 
@@ -92,7 +97,7 @@ class WheelOdomEstimator:
         # Update observation vector zt
         self.zt = np.array([u_odom, v_imu, omega_imu, omega_steering])
 
-    def update(self):
+    def update(self) -> None:
         # Update covariance matrices
         self.Sigma_sq = self.Fk @ self.Sigma_sq @ self.Fk.T + self.Sigma_msq
         self.Relative_Sigma_sq = self.Fk @ self.Init_relative_sigma_sq @ self.Fk.T + self.Sigma_msq
@@ -118,14 +123,14 @@ class WheelOdomEstimator:
         self.Sigma_sq = (self.I_mat - Kt @ self.H) @ self.Sigma_sq
         self.Relative_Sigma_sq = (self.I_mat - Kt @ self.H) @ self.Relative_Sigma_sq
 
-    def get_current_pose(self):
+    def get_current_pose(self) -> Tuple[float, float, float]:
         # Extract the current pose (x, y, theta)
         x = self.mu[0]
         y = self.mu[1]
         theta = self.mu[2]
         return x, y, theta
 
-    def get_pose_at_time(self, timestamp):
+    def get_pose_at_time(self, timestamp: float) -> Tuple[float, float, float]:
         dt = timestamp / 1e9 - self.time_now
         u = self.mu[3]
         v = self.mu[4]
@@ -137,7 +142,7 @@ class WheelOdomEstimator:
 
         return x, y, theta
 
-    def init(self):
+    def init(self) -> None:
         self.H[0, 3] = 1.0
         self.H[1, 4] = 1.0
         self.H[2, 5] = 1.0
