@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Optional, Tuple
 
 import cv2
@@ -107,3 +108,40 @@ class VideoDisplay(AbstractVideoHandler):
             int: ASCII code of the pressed key, or -1 if no key was pressed.
         '''
         return cv2.waitKey(self.delay)
+
+
+class ImagesWriter(AbstractVideoHandler):
+    def __init__(self, output_folder: str, file_prefix: str = 'frame', file_extension: str = 'png') -> None:
+        '''
+        Initializes the ImagesWriter class.
+
+        Args:
+            output_folder (str): Path to the folder where images will be saved.
+            file_prefix (str): Prefix for the saved image files (default is 'frame').
+            file_extension (str): File extension for the saved images (default is 'png').
+        '''
+        self.output_folder: Path = Path(output_folder)
+        self.file_prefix: str = file_prefix
+        self.file_extension: str = file_extension
+        self.frame_counter: int = 0
+
+        # Create the output folder if it does not exist
+        self.output_folder.mkdir(parents=True, exist_ok=True)
+
+    def handle_frame(self, frame: npt.NDArray[Any]) -> None:
+        '''
+        Saves a frame as an image file.
+
+        Args:
+            frame (npt.NDArray[Any]): The frame to be saved.
+        '''
+        file_name = f'{self.file_prefix}_{self.frame_counter:06d}.{self.file_extension}'
+        file_path = self.output_folder.joinpath(file_name)
+        cv2.imwrite(str(file_path), frame)
+        self.frame_counter += 1
+
+    def release(self) -> None:
+        '''
+        Placeholder for releasing resources. Not needed for ImagesWriter.
+        '''
+        pass
