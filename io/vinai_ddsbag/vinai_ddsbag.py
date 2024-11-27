@@ -28,6 +28,7 @@ class FrameItem:
         x: Optional[float] = None,
         y: Optional[float] = None,
         theta: Optional[float] = None,
+        synchronized: bool = True,
     ) -> None:
         self.front: npt.NDArray[Any] = front
         self.left: npt.NDArray[Any] = left
@@ -36,6 +37,7 @@ class FrameItem:
         self.x: Optional[float] = x
         self.y: Optional[float] = y
         self.theta: Optional[float] = theta
+        self.synchronized: bool = synchronized
 
     @property
     def cams(self) -> Dict[str, npt.NDArray[Any]]:
@@ -72,11 +74,13 @@ class VinAIDDSBag:
         db_path: str,
         db_json_path: Optional[str] = None,
         compressed: bool = False,
+        time_diff_thres: float = 0.020,
         wheel_odom_estimator_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.db_path: str = db_path
         self.db_json_path: Optional[str] = db_json_path
         self.compressed: bool = compressed
+        self.time_diff_thres = time_diff_thres
         self.ref_cam: str = [name for name in self.cam_topics][0]
 
         self.db: Optional[SQLiteDatabase] = None
@@ -196,15 +200,19 @@ class VinAIDDSBag:
                     )
 
             if sync_items[self.ref_cam].new:
+                min_timestamp = min(sync_items[name].timestamp for name in self.cam_topics)
+                max_time_diff = max(sync_items[name].timestamp - min_timestamp for name in self.cam_topics)
+
                 frame_item = FrameItem(
                     front=self.decode(sync_items['front'].value),
                     left=self.decode(sync_items['left'].value),
                     rear=self.decode(sync_items['rear'].value),
                     right=self.decode(sync_items['right'].value),
+                    synchronized=max_time_diff < self.time_diff_thres,
                 )
 
                 if self.pose_included:
-                    x, y, theta = self.wheel_odom_estimator.get_pose_at_time(sync_items['front'].timestamp)
+                    x, y, theta = self.wheel_odom_estimator.get_pose_at_time(sync_items[self.ref_cam].timestamp)
                     frame_item.x = x
                     frame_item.y = y
                     frame_item.theta = theta
