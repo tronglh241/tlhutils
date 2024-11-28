@@ -224,7 +224,7 @@ class VinAIDDSBag:
                     frame_item.y = y
                     frame_item.theta = theta
 
-                    frame_item.motion = (x - self.last_x) ** 2 + (y - self.last_y) ** 2 > self.dist_thres ** 2
+                    frame_item.motion = (x - self.last_x) ** 2 + (y - self.last_y) ** 2 >= self.dist_thres ** 2
                     self.last_x = x
                     self.last_y = y
 
