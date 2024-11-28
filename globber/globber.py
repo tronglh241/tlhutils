@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 from typing import List, Optional
 
@@ -40,5 +41,8 @@ class FileGlobber:
 
         if self.natsort:
             paths = natsorted(paths, key=lambda p: str(p))
+
+        if not paths:
+            warnings.warn(f'Globbed no file, {str(self.root_dir)}')
 
         return paths
