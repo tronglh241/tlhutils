@@ -29,6 +29,7 @@ class FrameItem:
         y: Optional[float] = None,
         theta: Optional[float] = None,
         synchronized: bool = True,
+        motion: bool = True,
     ) -> None:
         self.front: npt.NDArray[Any] = front
         self.left: npt.NDArray[Any] = left
@@ -38,6 +39,7 @@ class FrameItem:
         self.y: Optional[float] = y
         self.theta: Optional[float] = theta
         self.synchronized: bool = synchronized
+        self.motion: bool = motion
 
     @property
     def cams(self) -> Dict[str, npt.NDArray[Any]]:
@@ -74,13 +76,15 @@ class VinAIDDSBag:
         db_path: str,
         db_json_path: Optional[str] = None,
         compressed: bool = False,
-        time_diff_thres: float = 0.020,
+        time_diff_thres: float = 0.020,  # second
+        dist_thres: float = 0.05,  # meter
         wheel_odom_estimator_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.db_path: str = db_path
         self.db_json_path: Optional[str] = db_json_path
         self.compressed: bool = compressed
         self.time_diff_thres = time_diff_thres
+        self.dist_thres = dist_thres
         self.ref_cam: str = [name for name in self.cam_topics][0]
 
         self.db: Optional[SQLiteDatabase] = None
@@ -92,6 +96,9 @@ class VinAIDDSBag:
             self.db_json: Optional[SQLiteDatabase] = None
             self.ref_sensor: str = [name for name in self.dbw_topics][0]
             self.wheel_odom_estimator: WheelOdomEstimator = WheelOdomEstimator(wheel_odom_estimator_config)
+
+            self.last_x = 0.0
+            self.last_y = 0.0
 
     def __iter__(self) -> Iterator[FrameItem]:
         self.reset()
@@ -208,7 +215,7 @@ class VinAIDDSBag:
                     left=self.decode(sync_items['left'].value),
                     rear=self.decode(sync_items['rear'].value),
                     right=self.decode(sync_items['right'].value),
-                    synchronized=max_time_diff < self.time_diff_thres,
+                    synchronized=max_time_diff < self.time_diff_thres * 1e9,
                 )
 
                 if self.pose_included:
@@ -216,6 +223,10 @@ class VinAIDDSBag:
                     frame_item.x = x
                     frame_item.y = y
                     frame_item.theta = theta
+
+                    frame_item.motion = (x - self.last_x) ** 2 + (y - self.last_y) ** 2 > self.dist_thres ** 2
+                    self.last_x = x
+                    self.last_y = y
 
                 break
 
