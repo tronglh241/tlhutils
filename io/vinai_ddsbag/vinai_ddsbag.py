@@ -247,6 +247,7 @@ class VinAIDDSBag:
         if self.grayscale:
             arr = np.asarray(buf[16:], dtype=np.uint8)
             img: npt.NDArray[Any] = arr.reshape(800, 1280)
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
         elif self.compressed:
             arr = np.asarray(buf[60:], dtype=np.uint8)
             img = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
@@ -254,5 +255,5 @@ class VinAIDDSBag:
             arr = np.asarray(buf[16:], dtype=np.uint8)
             img = arr.reshape(800, 1280, 3)[..., ::-1]
 
-        assert img.shape == (800, 1280) if self.grayscale else (800, 1280, 3)
+        assert img.shape == (800, 1280, 3)
         return img
