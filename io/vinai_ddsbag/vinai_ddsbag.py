@@ -246,7 +246,7 @@ class VinAIDDSBag:
         buf = bytearray(buf)
         if self.grayscale:
             arr = np.asarray(buf[16:], dtype=np.uint8)
-            img = arr.reshape(800, 1280)
+            img: npt.NDArray[Any] = arr.reshape(800, 1280)
         elif self.compressed:
             arr = np.asarray(buf[60:], dtype=np.uint8)
             img = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
