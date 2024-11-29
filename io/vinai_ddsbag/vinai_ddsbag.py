@@ -76,6 +76,7 @@ class VinAIDDSBag:
         db_path: str,
         db_json_path: Optional[str] = None,
         compressed: bool = False,
+        grayscale: bool = False,
         time_diff_thres: float = 0.020,  # second
         dist_thres: float = 0.05,  # meter
         wheel_odom_estimator_config: Optional[Dict[str, Any]] = None,
@@ -83,6 +84,7 @@ class VinAIDDSBag:
         self.db_path: str = db_path
         self.db_json_path: Optional[str] = db_json_path
         self.compressed: bool = compressed
+        self.grayscale: bool = grayscale
         self.time_diff_thres = time_diff_thres
         self.dist_thres = dist_thres
         self.ref_cam: str = [name for name in self.cam_topics][0]
@@ -120,6 +122,14 @@ class VinAIDDSBag:
 
     @property
     def cam_topics(self) -> Dict[str, str]:
+        if self.grayscale:
+            return {
+                'front': '/adas/sensors/camera/gray_fisheye_front@0',
+                'left': '/adas/sensors/camera/gray_fisheye_left@0',
+                'rear': '/adas/sensors/camera/gray_fisheye_rear@0',
+                'right': '/adas/sensors/camera/gray_fisheye_right@0',
+            }
+
         if self.compressed:
             return {
                 'front': '/adas/sensors/camera/fisheye_front@0',
@@ -234,12 +244,15 @@ class VinAIDDSBag:
 
     def decode(self, buf: bytes) -> npt.NDArray[Any]:
         buf = bytearray(buf)
-        if self.compressed:
+        if self.grayscale:
+            arr = np.asarray(buf[16:], dtype=np.uint8)
+            img = arr.reshape(800, 1280)
+        elif self.compressed:
             arr = np.asarray(buf[60:], dtype=np.uint8)
             img = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
         else:
             arr = np.asarray(buf[16:], dtype=np.uint8)
             img = arr.reshape(800, 1280, 3)[..., ::-1]
 
-        assert img.shape == (800, 1280, 3)
+        assert img.shape == (800, 1280) if self.grayscale else (800, 1280, 3)
         return img
