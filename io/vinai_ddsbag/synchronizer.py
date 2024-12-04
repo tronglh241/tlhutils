@@ -46,10 +46,13 @@ class Synchronizer:
         return self
 
     def __next__(self) -> Dict[str, Item]:
-        if any(item is None for item in self.incoming_items.values()):
+        if all(item is None for item in self.incoming_items.values()):
             raise StopIteration
 
-        ref_name = min(self.incoming_items.items(), key=lambda item: item[1].timestamp)[0]  # type: ignore
+        ref_name = min(
+            self.incoming_items.items(),
+            key=lambda item: item[1].timestamp if item[1] is not None else 1e30
+        )[0]
         ref_item = self.incoming_items[ref_name]
         assert ref_item is not None
         ref_item.new = True
@@ -63,10 +66,12 @@ class Synchronizer:
             last_item = self.last_items[name]
 
             assert ref_item is not None
-            assert incoming_item is not None
             assert last_item is not None
 
-            if abs(ref_item.timestamp - incoming_item.timestamp) < abs(ref_item.timestamp - last_item.timestamp):
+            if (
+                incoming_item is not None
+                and abs(ref_item.timestamp - incoming_item.timestamp) < abs(ref_item.timestamp - last_item.timestamp)
+            ):
                 result[name] = incoming_item
             else:
                 result[name] = last_item

@@ -1,4 +1,5 @@
 import json
+import warnings
 from enum import Enum
 from typing import Any, Dict, Iterator, Optional
 
@@ -21,34 +22,25 @@ class Gear(Enum):
 class FrameItem:
     def __init__(
         self,
-        front: npt.NDArray[Any],
-        left: npt.NDArray[Any],
-        rear: npt.NDArray[Any],
-        right: npt.NDArray[Any],
+        front: Optional[npt.NDArray[Any]] = None,
+        left: Optional[npt.NDArray[Any]] = None,
+        rear: Optional[npt.NDArray[Any]] = None,
+        right: Optional[npt.NDArray[Any]] = None,
         x: Optional[float] = None,
         y: Optional[float] = None,
         theta: Optional[float] = None,
         synchronized: bool = True,
         motion: bool = True,
     ) -> None:
-        self.front: npt.NDArray[Any] = front
-        self.left: npt.NDArray[Any] = left
-        self.rear: npt.NDArray[Any] = rear
-        self.right: npt.NDArray[Any] = right
+        self.front: Optional[npt.NDArray[Any]] = front
+        self.left: Optional[npt.NDArray[Any]] = left
+        self.rear: Optional[npt.NDArray[Any]] = rear
+        self.right: Optional[npt.NDArray[Any]] = right
         self.x: Optional[float] = x
         self.y: Optional[float] = y
         self.theta: Optional[float] = theta
         self.synchronized: bool = synchronized
         self.motion: bool = motion
-
-    @property
-    def cams(self) -> Dict[str, npt.NDArray[Any]]:
-        return {
-            'front': self.front,
-            'left': self.left,
-            'rear': self.rear,
-            'right': self.right,
-        }
 
 
 class SQLiteSource(Source):
@@ -101,6 +93,8 @@ class VinAIDDSBag:
 
             self.last_x = 0.0
             self.last_y = 0.0
+
+        self.avail_cams: Dict[str, str] = {}
 
     def __iter__(self) -> Iterator[FrameItem]:
         self.reset()
@@ -162,13 +156,17 @@ class VinAIDDSBag:
         cursors: Dict[str, SQLiteCursor] = {}
 
         # Check if all tables exist
-        for table_name in self.cam_topics.values():
+        for name, table_name in self.cam_topics.items():
             if not self.db.table_exists(table_name):
-                raise ValueError(f'Table {table_name} does not exist in database {self.db_path}.')
+                warnings.warn(f'Table {table_name} does not exist in database {self.db_path}.')
+            else:
+                self.avail_cams[name] = table_name
+        assert self.avail_cams
+        self.ref_cam = list(self.avail_cams)[0]
 
         cam_cursors = {
             name: self.db.query(f'SELECT rti_cdr_sample, SampleInfo_reception_timestamp FROM "{topic}"')
-            for name, topic in self.cam_topics.items()
+            for name, topic in self.avail_cams.items()
         }
         cursors.update(cam_cursors)
 
@@ -190,7 +188,10 @@ class VinAIDDSBag:
             }
             cursors.update(dbw_cursors)
 
-        self.synchronizer = Synchronizer({name: SQLiteSource(cursor) for name, cursor in cursors.items()})
+        self.synchronizer = Synchronizer({
+            name: SQLiteSource(cursor)
+            for name, cursor in cursors.items()
+        })
         self.synchronizer_it = iter(self.synchronizer)
 
     def next(self) -> Optional[FrameItem]:
@@ -200,8 +201,14 @@ class VinAIDDSBag:
             except StopIteration:
                 return None
 
+            if all(sync_items[name].value is None for name in self.avail_cams):
+                return None
+
             if self.pose_included:
                 if sync_items[self.ref_sensor].new:
+                    for name in self.dbw_topics:
+                        assert sync_items[name].value is not None
+
                     dbw_values = {name: json.loads(sync_items[name].value) for name in self.dbw_topics}
                     self.wheel_odom_estimator.update_info_and_estimate(
                         speed_timestamp=dbw_values['idb']['timestamp'],
@@ -217,14 +224,14 @@ class VinAIDDSBag:
                     )
 
             if sync_items[self.ref_cam].new:
-                min_timestamp = min(sync_items[name].timestamp for name in self.cam_topics)
-                max_time_diff = max(sync_items[name].timestamp - min_timestamp for name in self.cam_topics)
+                min_timestamp = min(sync_items[name].timestamp for name in self.avail_cams)
+                max_time_diff = max(sync_items[name].timestamp - min_timestamp for name in self.avail_cams)
 
                 frame_item = FrameItem(
-                    front=self.decode(sync_items['front'].value),
-                    left=self.decode(sync_items['left'].value),
-                    rear=self.decode(sync_items['rear'].value),
-                    right=self.decode(sync_items['right'].value),
+                    front=self.decode(sync_items['front'].value) if sync_items.get('front') else None,
+                    left=self.decode(sync_items['left'].value) if sync_items.get('left') else None,
+                    rear=self.decode(sync_items['rear'].value) if sync_items.get('rear') else None,
+                    right=self.decode(sync_items['right'].value) if sync_items.get('right') else None,
                     synchronized=max_time_diff < self.time_diff_thres * 1e9,
                 )
 
