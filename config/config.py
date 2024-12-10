@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import inspect
 from pathlib import Path
 from typing import Any, List, Union
 
@@ -53,3 +55,13 @@ class CfgNode(BaseCfgNode):  # type: ignore
         else:
             # Return the item if it is not a dict or list
             return data
+
+    @staticmethod
+    def argparse():
+        caller_file = Path(inspect.stack()[1].filename)
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--config-file', default=str(caller_file.parent.joinpath('configs', 'config.yml')))
+        args = parser.parse_args()
+
+        return args.config_file
