@@ -42,6 +42,15 @@ class FrameItem:
         self.synchronized: bool = synchronized
         self.motion: bool = motion
 
+    @property
+    def cams(self) -> Dict[str, npt.NDArray[Any]]:
+        return {
+            'front': self.front,
+            'left': self.left,
+            'rear': self.rear,
+            'right': self.right,
+        }
+
 
 class SQLiteSource(Source):
     def __init__(self, cursor: SQLiteCursor) -> None:
