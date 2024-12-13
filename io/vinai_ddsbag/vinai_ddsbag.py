@@ -43,7 +43,7 @@ class FrameItem:
         self.motion: bool = motion
 
     @property
-    def cams(self) -> Dict[str, npt.NDArray[Any]]:
+    def cams(self) -> Dict[str, Optional[npt.NDArray[Any]]]:
         return {
             'front': self.front,
             'left': self.left,

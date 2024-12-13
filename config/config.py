@@ -57,11 +57,12 @@ class CfgNode(BaseCfgNode):  # type: ignore
             return data
 
     @staticmethod
-    def argparse():
+    def argparse() -> str:
         caller_file = Path(inspect.stack()[1].filename)
 
         parser = argparse.ArgumentParser()
         parser.add_argument('--config-file', default=str(caller_file.parent.joinpath('configs', 'config.yml')))
         args = parser.parse_args()
+        config_file: str = args.config_file
 
-        return args.config_file
+        return config_file
