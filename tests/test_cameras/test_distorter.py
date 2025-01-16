@@ -89,8 +89,6 @@ if __name__ == '__main__':
         undistorted_im_size=im.shape[1::-1],
         rotation=None,
         extrinsic=calib_info['rear']['extrinsic'],
-        f=None,
-        c=None,
     )
     undistorted_im = undistorter(im)
 
@@ -100,8 +98,6 @@ if __name__ == '__main__':
         distorted_im_size=im.shape[1::-1],
         rotation=None,
         extrinsic=calib_info['rear']['extrinsic'],
-        f=None,
-        c=None,
     )
     distorted_im = distorter(undistorted_im)
 
@@ -111,14 +107,16 @@ if __name__ == '__main__':
     cv2.waitKey()
     cv2.destroyAllWindows()
 
+    new_intrinsic = calib_info['rear']['intrinsic'].copy()
+    new_intrinsic[:2] /= 2
+    undistorted_im_size = (im.shape[1] // 2, im.shape[0] // 2)
     undistorter = Undistorter(
         intrinsic=calib_info['rear']['intrinsic'],
         distortion=calib_info['rear']['distortion'],
-        undistorted_im_size=(im.shape[1] // 2, im.shape[0] // 2),
+        undistorted_im_size=undistorted_im_size,
         rotation=rotation_matrix(axis=(1, 0, 0), theta=-np.pi / 4),
         extrinsic=calib_info['rear']['extrinsic'],
-        f=(calib_info['rear']['intrinsic'][0, 0] // 2, calib_info['rear']['intrinsic'][1, 1] // 2),
-        c=(calib_info['rear']['intrinsic'][0, -1] // 2, calib_info['rear']['intrinsic'][1, -1] // 2),
+        new_intrinsic=new_intrinsic,
     )
     undistorted_im = undistorter(im)
 
@@ -126,10 +124,9 @@ if __name__ == '__main__':
         intrinsic=undistorter.new_intrinsic,
         distortion=calib_info['rear']['distortion'],
         distorted_im_size=im.shape[1::-1],
-        rotation=rotation_matrix(axis=(1, 0, 0), theta=-np.pi / 4),
+        rotation=rotation_matrix(axis=(1, 0, 0), theta=np.pi / 4),
         extrinsic=calib_info['rear']['extrinsic'],
-        f=(calib_info['rear']['intrinsic'][0, 0], calib_info['rear']['intrinsic'][1, 1]),
-        c=(calib_info['rear']['intrinsic'][0, -1], calib_info['rear']['intrinsic'][1, -1]),
+        new_intrinsic=calib_info['rear']['intrinsic'],
     )
     distorted_im = distorter(undistorted_im)
 

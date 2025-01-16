@@ -13,8 +13,7 @@ class Distorter:
         distorted_im_size: Tuple[int, int],
         rotation: npt.NDArray[Any] = None,
         extrinsic: npt.NDArray[Any] = None,
-        f: Tuple[float, float] = None,
-        c: Tuple[float, float] = None,
+        new_intrinsic: npt.NDArray[Any] = None,
     ):
         if rotation is None:
             rotation = np.eye(3)
@@ -23,14 +22,8 @@ class Distorter:
         assert distortion.shape == (4,), distortion.shape
         assert rotation.shape == (3, 3), rotation.shape
 
-        if f is None or c is None:
+        if new_intrinsic is None:
             new_intrinsic = intrinsic.copy()
-        else:
-            new_intrinsic = np.array([
-                [f[0], 0.0, c[0]],
-                [0.0, f[1], c[1]],
-                [0.0, 0.0, 1.0],
-            ], dtype=np.float32)
 
         assert new_intrinsic.shape == (3, 3), new_intrinsic.shape
 
@@ -55,7 +48,7 @@ class Distorter:
             distorted=points,
             K=new_intrinsic,
             D=distortion,
-            R=rotation,
+            R=np.linalg.inv(rotation),
             P=intrinsic,
         )
         undistorted_points = undistorted_points.reshape(distorted_im_size[1], distorted_im_size[0], 2)
