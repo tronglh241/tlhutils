@@ -86,7 +86,7 @@ if __name__ == '__main__':
     undistorter = Undistorter(
         intrinsic=calib_info['rear']['intrinsic'],
         distortion=calib_info['rear']['distortion'],
-        undistorted_im_size=im.shape[1::-1],
+        undistorted_im_size=(im.shape[1], im.shape[0]),
         rotation=None,
         extrinsic=calib_info['rear']['extrinsic'],
     )
@@ -95,7 +95,7 @@ if __name__ == '__main__':
     distorter = Distorter(
         intrinsic=undistorter.new_intrinsic,
         distortion=calib_info['rear']['distortion'],
-        distorted_im_size=im.shape[1::-1],
+        distorted_im_size=(im.shape[1], im.shape[0]),
         rotation=None,
         extrinsic=calib_info['rear']['extrinsic'],
     )
@@ -123,7 +123,7 @@ if __name__ == '__main__':
     distorter = Distorter(
         intrinsic=undistorter.new_intrinsic,
         distortion=calib_info['rear']['distortion'],
-        distorted_im_size=im.shape[1::-1],
+        distorted_im_size=(im.shape[1], im.shape[0]),
         rotation=rotation_matrix(axis=(1, 0, 0), theta=np.pi / 4),
         extrinsic=calib_info['rear']['extrinsic'],
         new_intrinsic=calib_info['rear']['intrinsic'],

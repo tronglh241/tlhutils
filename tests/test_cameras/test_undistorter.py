@@ -85,7 +85,7 @@ if __name__ == '__main__':
     undistorter = Undistorter(
         intrinsic=calib_info['rear']['intrinsic'],
         distortion=calib_info['rear']['distortion'],
-        undistorted_im_size=im.shape[1::-1],
+        undistorted_im_size=(im.shape[1], im.shape[0]),
         rotation=None,
         extrinsic=calib_info['rear']['extrinsic'],
     )
