@@ -39,7 +39,7 @@ if __name__ == '__main__':
         extrinsic=calib_info['rear']['extrinsic'],
         distortion=calib_info['rear']['distortion'],
     )
-
+    # Single depth
     depth = np.ones((args.height, args.width, 1), dtype=np.float32)
 
     # PCD in camera coordinate
@@ -74,3 +74,38 @@ if __name__ == '__main__':
     o3d.io.write_point_cloud(out_dir.joinpath('world_single_depth_single_calib.ply'), pcd)
 
     # Multiple depth
+    depth = np.ones((args.height, args.width, 3), dtype=np.float32)
+    depth[..., 1] = 2.0
+    depth[..., 2] = 3.0
+
+    # PCD in camera coordinate
+    points_3d, valid_points = camera.im_to_cam_map(
+        depth_map=depth,
+        mask=mask,
+    )
+    assert points_3d.shape[2] == 3
+
+    for depth_idx in range(points_3d.shape[2]):
+        points = points_3d[..., depth_idx, :][valid_points]
+        positions = o3d.utility.Vector3dVector(points)
+        pcd = o3d.geometry.PointCloud(positions)
+
+        point_colors = im[valid_points]
+        colors = o3d.utility.Vector3dVector(point_colors)
+        pcd.colors = colors
+
+        o3d.io.write_point_cloud(out_dir.joinpath(f'camera_multiple_depth_single_calib_{depth_idx}.ply'), pcd)
+
+    # PCD in world coordinate
+    points_3d = camera.cam_to_world(points_3d=points_3d)
+
+    for depth_idx in range(points_3d.shape[2]):
+        points = points_3d[..., depth_idx, :][valid_points]
+        positions = o3d.utility.Vector3dVector(points)
+        pcd = o3d.geometry.PointCloud(positions)
+
+        point_colors = im[valid_points]
+        colors = o3d.utility.Vector3dVector(point_colors)
+        pcd.colors = colors
+
+        o3d.io.write_point_cloud(out_dir.joinpath(f'world_multiple_depth_single_calib_{depth_idx}.ply'), pcd)

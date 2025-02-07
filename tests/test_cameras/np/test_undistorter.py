@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 
 sys.path.append(os.getcwd())
-from cameras.np.fisheye.undistorter import Undistorter  # noqa: E402
+from cameras.np.fisheye_old.undistorter import Undistorter  # noqa: E402
 from tests.test_cameras.utils.calib import load_calib  # noqa: E402
 from tests.test_cameras.utils.matrix import rotation_matrix  # noqa: E402
 
