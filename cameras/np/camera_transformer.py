@@ -37,6 +37,8 @@ class CameraTransformer:
         points_2d = self.src_cam.cam_to_im(points_3d).astype(np.float32)
         assert points_2d.shape == (self.dst_cam.height, self.dst_cam.width, 2)
 
+        points_2d[~valid_points] = -1.0
+
         self.xmap = points_2d[..., 0]
         self.ymap = points_2d[..., 1]
 

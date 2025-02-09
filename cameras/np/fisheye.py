@@ -70,7 +70,7 @@ class Fisheye(Camera):
             + self.distortion[..., 3:4] * np.power(theta, 8)
         )
         assert theta_d.shape == pre_dims, (theta_d.shape, pre_dims)
-        inv_r = np.where(r > 1e-8, 1.0 / r, 1.0)
+        inv_r = np.where(r > 1e-8, 1.0 / (r + self.eps), 1.0)
         cdist = np.where(r > 1e-8, theta_d * inv_r, 1.0)
 
         x = cdist * points_2d[..., 0]
