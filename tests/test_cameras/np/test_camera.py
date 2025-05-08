@@ -9,7 +9,6 @@ import open3d as o3d
 
 sys.path.append(os.getcwd())
 from cameras.np.fisheye import Fisheye  # noqa: E402
-
 from tests.test_cameras.utils.calib import load_calib  # noqa: E402
 
 if __name__ == '__main__':
